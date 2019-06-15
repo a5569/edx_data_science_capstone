@@ -1,0 +1,242 @@
+---
+title: "Capstone"
+author: "Andre"
+date: "15 may 2019"
+output: pdf_document
+fig_height: 2
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(randomForest)
+library(caret)
+```
+
+## Introduction
+
+For this project for the Data Science Capstone from EDX we will perform a EDA and create a machine learning model using a choosen dataset.
+
+The data choosed is the Heart Disease Data Set from the [UCI Machine Learning Repository](http://archive.ics.uci.edu/ml/datasets/Heart+Disease). We will use 4 dataset:
+
+1. Cleveland Clinic Foundation (cleveland.data)
+2. Hungarian Institute of Cardiology, Budapest (hungarian.data)
+3. V.A. Medical Center, Long Beach, CA (long-beach-va.data)
+4. University Hospital, Zurich, Switzerland (switzerland.data)
+
+In this dataset we the information about pacients that went to 4 hospitals and had several test and were diagnosed with or without heart desease.
+
+
+## Executive summary
+
+In this project we will:
+
+- load the data
+- perform some cleaning and transformation
+- analysis the data
+- prepare the data
+- perform a machine learnig model
+- evaluate the model
+
+
+## Loading the data
+
+```{r}
+download.file(paste('http://archive.ics.uci.edu/ml/machine-learning-databases/',
+		    'heart-disease/processed.cleveland.data', sep = ''), 'processed.cleveland.data')
+data.1 <- read.csv('processed.cleveland.data',
+		   col.names = c('age', 'sex', 'cp', 'trestbps', 'chol', 'fbs',
+				 'restecg', 'thalach', 'exang', 'oldpeak', 'slope',
+				 'ca', 'thal', 'target'))
+
+download.file(paste('http://archive.ics.uci.edu/ml/machine-learning-databases/',
+		    'heart-disease/reprocessed.hungarian.data', sep = ''), 'processed.hungarian.data')
+data.2 <- read.csv('processed.cleveland.data',
+		   col.names = c('age', 'sex', 'cp', 'trestbps', 'chol', 'fbs',
+				 'restecg', 'thalach', 'exang', 'oldpeak', 'slope',
+				 'ca', 'thal', 'target'))
+
+download.file(paste('http://archive.ics.uci.edu/ml/machine-learning-databases/',
+		    'heart-disease/processed.switzerland.data', sep = ''), 'processed.switzerland.data')
+data.3 <- read.csv('processed.cleveland.data',
+		   col.names = c('age', 'sex', 'cp', 'trestbps', 'chol', 'fbs',
+				 'restecg', 'thalach', 'exang', 'oldpeak', 'slope',
+				 'ca', 'thal', 'target'))
+
+download.file(paste('http://archive.ics.uci.edu/ml/machine-learning-databases/',
+		    'heart-disease/processed.va.data', sep = ''), 'processed.va.data')
+data.4 <- read.csv('processed.cleveland.data',
+		   col.names = c('age', 'sex', 'cp', 'trestbps', 'chol', 'fbs',
+				 'restecg', 'thalach', 'exang', 'oldpeak', 'slope',
+				 'ca', 'thal', 'target'))
+
+data <- rbind(data.1, data.2, data.3, data.4) %>%
+	mutate(target = as_factor(ifelse(target == 0, 0, 1)),
+	       sex = as_factor(sex),
+	       cp = as_factor(cp),
+	       exang = as_factor(exang),
+	       slope = as_factor(slope),
+	       ca = as_factor(ca),
+	       thal = as_factor(thal))
+
+levels(data$target) <- c('not_desease', 'desease')
+levels(data$sex) <- c('female', 'male')
+levels(data$cp) <- c('typical_angina', 'atypical_angina', 'non-anginal_pain',
+		     'asymptomatic')
+levels(data$exang) <- c('no', 'yes')
+levels(data$slope) <- c('upsloping', 'flat', 'downsloping')
+levels(data$thal) <- c('?', 'normal', 'fixed_defect', 'reversable_defect')
+```
+
+## Exploratory data analysis
+
+In this dataset we have 302 observations (one for each patient) and 14 variables.
+
+```{r}
+head(data)
+str(data)
+```
+
+
+To start we will analyse eacho of the 13 variables that will be used to explain the model and try to detect visualy patterns and variable that can be removed.
+
+### Age
+
+The average age of pacients with heart disease is higher then pacients without a heart disease, this difference is not very big but can be used in the model.
+
+```{r}
+data %>% ggplot(aes(y=age, x=target, color=target)) + geom_boxplot() + theme_minimal()
+```
+
+
+### Sex
+
+Most of pacients in this dataset are male this could create an gender bias in the model, besides that the percentage of men with heart desease is higher then women.
+
+```{r}
+data %>% ggplot(aes(x=sex, color=target)) + geom_bar(fill='#FFFFFF') + theme_minimal()
+```
+
+
+### Chest pain
+
+Contrary to popular belief, in this dataset most of people with heart desease does not have anginal symptoms.
+
+```{r}
+data %>% ggplot(aes(x=cp, color=target)) + geom_bar(fill='#FFFFFF') + theme_minimal()
+```
+
+
+### Rest Blood Pressure
+
+Both desease and health pacients have almost the same average rest blood pressure, so this variable would not be a good predctior of heart desease.
+
+```{r}
+data %>% ggplot(aes(y=trestbps, x=target, color=target)) + geom_boxplot() + theme_minimal()
+```
+
+
+### Serum cholestoral in mg/dl
+
+As the rest blood pressure the Serum cholestoral probably will not be a good predictor, the values for desease and health pacients are almost the same.
+
+```{r}
+data %>% ggplot(aes(y=chol, x=target, color=target)) + geom_boxplot() + theme_minimal()
+```
+
+
+### Maximum heart rate achieved
+
+The maximum heart rate achived during the exames is a good predictor, there is a good separation between pacients with and without a heart desease.
+
+```{r}
+data %>% ggplot(aes(y=thalach, x=target, color=target)) + geom_boxplot() + theme_minimal()
+```
+
+
+### Exercise induced angina
+
+There is not differente in pacients with a heart desease in the angina induced by exercises, but on pacients without a heart desease this variable is significative.
+
+```{r}
+data %>% ggplot(aes(x=exang, color=target)) + geom_bar(fill='#FFFFFF') + theme_minimal()
+```
+
+
+### ST depression induced by exercise relative to rest vs Slope of the peak exercise
+
+Since both variable are correlate, the ST depression in the eletrocardiogram during the exercise and slope of the exercise, we plot together.  
+In the up sloping there is no difference between health and desease pacients, but with flat and down sloping the difference increase between health and desease pacients.
+
+```{r}
+data %>% ggplot(aes(x=slope, y=oldpeak, color=target)) + geom_boxplot() + theme_minimal()
+```
+
+### Number of major vessels colored by flourosopy 
+
+Most of health pacientes will have none of the major vessels colored during the flourosopy, pacients with heart desease does not have this pattern.
+
+```{r}
+data %>% ggplot(aes(x=ca, color=target)) + geom_bar(fill='#FFFFFF') + theme_minimal()
+```
+
+
+### Thal
+
+The result of the Thal test show that health pacients have usually normal results and desease pacients have most of time a reversable defect.
+
+```{r}
+data %>% ggplot(aes(x=thal, color=target)) + geom_bar(fill='#FFFFFF') + theme_minimal()
+```
+
+
+## Data preaparation
+
+### Splitting the data
+
+The model will always have a better performance in the training dataset that in the real world, to help to have a better idea of the real world performance we will split the data in 2 datasets, one for training and another for evaluation.
+
+
+We will use 80% of the dataset to train the model and 20% to evaluate
+
+```{r}
+set.seed(123)
+train.index <- data$target %>% createDataPartition(p =0.8,list =F)
+train.data <- data[train.index,]
+test.data <- data[-train.index,]
+```
+
+
+## Machine learning model
+
+### Random Forest
+
+The random forest is a machine learning model that will test the data against multiple decision tree models tunning the parameters to find a better predictor.
+
+
+For this model we will use 500 trees, 
+
+```{r}
+rf.model <- randomForest(target~., data=train.data, ntree=500)
+```
+
+
+With the model we will predict the testing dataset
+
+```{r}
+rf.prediction <- predict(rf.model,newdata=test.data)
+
+```
+
+
+### Results
+
+For the testing dataset we have the following results:
+
+```{r}
+confusion.matrix <- table(test.data$target, rf.prediction)
+print(confusion.matrix)
+print(100*sum(diag(confusion.matrix))/sum(confusion.matrix))
+```
+
+With a accuracy of 100% we have a good model to predict pacients with heart desease using the 13 variables provided.
